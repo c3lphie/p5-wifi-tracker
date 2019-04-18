@@ -17,7 +17,7 @@ static inline void AddDevice(const char *const mac, const char *const ip, const 
   esp8266.tcpSend(0, buffer, strlen(buffer));
 }
 
-static inline void AddTrackedDevice(const char *const mac, const char *const targetmac, const char*const sigstrength, const char*const gateway)
+static inline void AddTrackedDevice(const char *const mac, const char *const targetmac, const char *const sigstrength, const char *const gateway)
 {
   char buffer[150] = {0};
 
@@ -25,76 +25,61 @@ static inline void AddTrackedDevice(const char *const mac, const char *const tar
 
   esp8266.tcpSend(0, buffer, strlen(buffer));
 }
-char mac[18] = {0};
-char ipa[16] = {0};
-char gatewaya[16] = {0};
+static char mac[18] = {0};
+static char ip[16] = {0};
+static char gateway[16] = {0};
 
 void setup()
 {
   soft.begin(9600);
-  soft.println("Begin");
 
-  while (esp8266.begin(115200, ESP8266_HARDWARE_SERIAL) != true)
+  // Connect to esp8266 @ 115200 with hardware serial
+  while (!esp8266.begin(115200, ESP8266_HARDWARE_SERIAL))
   {
-    soft.println("Error");
     delay(1000);
   }
 
   delay(1000);
 
+  // Set wifi adapter to station mode.
   esp8266.setMode(ESP8266_MODE_STA);
 
   delay(1000);
 
+  // Connect to CentralHub
   while (esp8266.connect("CentralHub", "mynamejeff123") < 0)
   {
-    soft.println("Connecting");
     delay(1000);
   }
 
 
   delay(1000);
 
-  soft.println("Connected");
-
-  IPAddress ip = esp8266.localIP();
-  IPAddress gateway = ip;
-
-  gateway[3] = 1;
+  // Get ip and gateway
+  IPAddress localIp = esp8266.localIP();
+  IPAddress gatewayIp = localIp;
+  gatewayIp[3] = 1;
 
   delay(1000);
 
-
-
+  // Get mac
   esp8266.localMAC(mac);
 
-  soft.println(mac);
-
   delay(1000);
 
-  if (esp8266.ping(gateway) > 0)
-  {
-    soft.println("We online bois");
-  }
-
-  delay(1000);
-
-
-  sprintf(ipa, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-  sprintf(gatewaya, "%d.%d.%d.%d", gateway[0], gateway[1], gateway[2], gateway[3]);
-
-  //AddTrackedDevice(mac, "AA:BB:CC:DD:EE:FF", "10", gatewaya);
-
-  soft.println(ip);
-  soft.println(gateway);
+  // Convert ips to strings
+  sprintf(ip, "%d.%d.%d.%d", localIp[0], localIp[1], localIp[2], localIp[3]);
+  sprintf(gateway, "%d.%d.%d.%d", gatewayIp[0], gatewayIp[1], gatewayIp[2], gatewayIp[3]);
 }
 
+// Read a char from the software serial buffer.
 static inline char Get()
 {
   int c = soft.read();
   while (c == -1)
   {
     c = soft.read();
+    yield();
   }
 
   return (char)c;
@@ -102,43 +87,51 @@ static inline char Get()
 
 void loop()
 {
+  // Connect to the webserver.
+  esp8266.tcpConnect(0, gateway, 80, 0);
+
+  delay(500);
+
+  // Add or update this device in the database.
+  AddDevice(mac, ip, gateway);
+
+  delay(500);
+
+  // Close the connection.
+  esp8266.close(0);
+
+  delay(500);
+
+  // Don't timeout
   soft.setTimeout(2147483647);
+  // Ignore the first as it could be corrupted
   soft.readStringUntil('\n');
-  
+
+  // Read mac and signal strength
   String p = soft.readStringUntil('\n');
   char buffer[50] = {0};
   strcpy(buffer, p.c_str());
   buffer[17] = 0;
 
+  // Remove newline characters
   for (uint8_t i = 0; i < 6; i++)
   {
     if (buffer[17 + i] == '\r' || buffer[17 + i] == '\n') buffer[17 + i] = 0;
   }
 
-  if (esp8266.tcpConnect(0, gatewaya, 80, 0) == 1)
-  {
-  }
+  // Connect to the webserver.
+  esp8266.tcpConnect(0, gateway, 80, 0);
 
   delay(500);
 
-  AddTrackedDevice(mac, buffer, buffer + 18, gatewaya);
+  
+  AddTrackedDevice(mac, buffer, buffer + 18, gateway);
 
   delay(500);
 
+  // Close the connection.
   esp8266.close(0);
 
-  delay(500);
-
-  if (esp8266.tcpConnect(0, gatewaya, 80, 0) == 1)
-  {
-  }
-
-  delay(500);
-
-  AddDevice(mac, ipa, gatewaya);AT
-
-  delay(500);
-  esp8266.close(0);
-
+  
   delay(500);
 }
